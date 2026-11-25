@@ -156,7 +156,7 @@ class NativeLoaderIntegrationTest {
         for (String runtime : Arrays.asList("/runtime", "/runtime/missing")) {
             List<String> command = new java.util.ArrayList<>(sandbox);
             command.addAll(Arrays.asList(runtime, "--chdir", "/", "--"));
-            String expectedRoot = runtime.equals("/runtime") ? runtime : "/dev/shm";
+            String expectedRoot = (runtime.equals("/runtime") ? runtime : "/dev/shm") + "/jni-test";
             runProbe(root, "linux-namespace",
                     new String[] { "-Djava.io.tmpdir=/tmp", "-Dnatives.userHome=" + home,
                             "-Dnatives.cacheDir=" + home.resolve("cache"), "-Dnatives.withOsLibraries=false",
@@ -330,6 +330,11 @@ class NativeLoaderIntegrationTest {
             }
             List<DirectoryCandidate> candidates = NativeDirectories.candidates("jni-test",
                     OperatingSystems::detect);
+            Path runtime = Paths.get(System.getenv("XDG_RUNTIME_DIR"));
+            boolean runtimeCandidate = candidates.stream()
+                    .anyMatch(c -> c.root().equals(runtime.resolve("jni-test")));
+            if (runtimeCandidate != Files.isDirectory(runtime) || Files.exists(runtime.resolve("jni-test")))
+                throw new AssertionError("Unexpected runtime candidate or eager creation: " + runtime);
             for (int index = 0; index < 3; index++) {
                 Path ancestor = Paths.get(index == 0 ? "/tmp" : "/host-home");
                 String owner = Files.getAttribute(ancestor, "unix:uid").toString();

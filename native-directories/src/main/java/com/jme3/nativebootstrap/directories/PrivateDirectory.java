@@ -9,6 +9,7 @@ import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -47,8 +48,9 @@ final class PrivateDirectory {
         return create(root, prefix, os, true);
     }
 
-    static Path create(Path root, String prefix, OperatingSystem os, boolean createRoot) throws IOException {
-        return create(root, prefix, os, new PermissionCommands(), createRoot);
+    static Path create(Path root, String prefix, OperatingSystem os, boolean createParents)
+            throws IOException {
+        return create(root, prefix, os, new PermissionCommands(), createParents);
     }
 
     static Path create(Path root, String prefix, OperatingSystem os, PermissionCommands commands)
@@ -57,7 +59,7 @@ final class PrivateDirectory {
     }
 
     private static Path create(Path root, String prefix, OperatingSystem os, PermissionCommands commands,
-            boolean createRoot) throws IOException {
+            boolean createParents) throws IOException {
         if (Boolean.getBoolean("natives.noAdditionalChecks")) commands = null;
         if (os == OperatingSystem.WINDOWS) return createWindows(root, prefix, commands);
         switch (os) {
@@ -71,8 +73,8 @@ final class PrivateDirectory {
             default:
                 throw new IOException("Desktop native extraction is unsupported for " + os);
         }
-        Path existing = root;
-        if (createRoot) {
+        Path existing = createParents ? root : root.getParent();
+        if (createParents) {
             while (existing != null && !Files.exists(existing)) existing = existing.getParent();
         }
         if (existing == null) throw new IOException("POSIX permissions are unavailable for " + root);
@@ -84,8 +86,16 @@ final class PrivateDirectory {
         // denied. Verify the actual attributes before creating any directories.
         if (!permissions.readAttributes().isDirectory())
             throw new IOException("Extraction ancestor is not a directory: " + existing);
-        if (createRoot && !Files.isDirectory(root))
-            Files.createDirectories(root, PosixFilePermissions.asFileAttribute(PRIVATE));
+        if (createParents) {
+            if (!Files.isDirectory(root))
+                Files.createDirectories(root, PosixFilePermissions.asFileAttribute(PRIVATE));
+        } else {
+            try {
+                Files.createDirectory(root, PosixFilePermissions.asFileAttribute(PRIVATE));
+            } catch (FileAlreadyExistsException e) {
+                if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) throw e;
+            }
+        }
         root = root.toRealPath();
         Path directory = Files.createTempDirectory(root, prefix,
                 PosixFilePermissions.asFileAttribute(PRIVATE));

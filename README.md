@@ -33,10 +33,11 @@ List<DirectoryCandidate> candidates = NativeDirectories.candidates(".my-app", "m
 Path directory = candidates.get(0).get();
 ```
 
-On Linux, the default candidates include `XDG_RUNTIME_DIR` and `/dev/shm` after the usual temporary,
-cache and home directories. These fallbacks require an existing directory and pass the same ownership,
-permissions and executable access checks. They can help when a container exposes the owners of the
-usual directories as unmapped UIDs.
+On Linux, the default candidates include the application namespace under `XDG_RUNTIME_DIR` and `/dev/shm`
+after the usual temporary, cache and home directories. Only existing base directories are considered.
+Native Bootstrap creates the namespace directory when needed and applies the same ownership, permissions
+and executable access checks. These candidates can help when a container exposes the owners of the usual
+directories as unmapped UIDs.
 
 ## System properties overrides
 

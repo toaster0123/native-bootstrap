@@ -72,7 +72,9 @@ class NativeDirectoriesTest {
                     home.resolve(".custom/natives/test"));
             if (os == OperatingSystem.LINUX) {
                 assertEquals(expected, paths.subList(0, expected.size()));
-                assertEquals(Paths.get("/dev/shm").toAbsolutePath(), paths.get(paths.size() - 1));
+                Path sharedMemory = Paths.get("/dev/shm");
+                assertEquals(sharedMemory.isAbsolute() && Files.isDirectory(sharedMemory),
+                        paths.contains(sharedMemory.resolve("test")));
             } else {
                 assertEquals(expected, paths);
             }

@@ -1,12 +1,15 @@
 package com.jme3.nativebootstrap.directories;
 
 import com.jme3.nativebootstrap.common.OperatingSystem;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -19,9 +22,9 @@ public final class NativeDirectories {
     /**
      * Returns preferred roots, JVM temp, user cache and ~/.jme3/natives/namespace, in that order. Default
      * paths may be overridden with natives.tempDir, natives.userHome and natives.cacheDir. Linux then tries
-     * existing XDG_RUNTIME_DIR and /dev/shm directories. The default .jme3 home prefix may be overridden with
-     * natives.namespace. Android and iOS return only a virtual candidate that carries the platform without
-     * referring to a filesystem directory.
+     * the namespace under existing XDG_RUNTIME_DIR and /dev/shm directories. The default .jme3 home prefix
+     * may be overridden with natives.namespace. Android and iOS return only a virtual candidate that carries
+     * the platform without referring to a filesystem directory.
      *
      * @param namespace
      *            application or library name
@@ -41,8 +44,8 @@ public final class NativeDirectories {
     /**
      * Returns preferred roots, JVM temp, user cache and ~/homePrefix/natives/namespace, in that order. Path
      * system properties apply; the explicit homePrefix takes precedence over natives.namespace. Linux then
-     * tries existing XDG_RUNTIME_DIR and /dev/shm directories. Android and iOS return only a virtual
-     * candidate without a filesystem directory.
+     * tries the namespace under existing XDG_RUNTIME_DIR and /dev/shm directories. Android and iOS return
+     * only a virtual candidate without a filesystem directory.
      *
      * @param homePrefix
      *            directory name under the user's home, for example ".jme3"
@@ -61,11 +64,12 @@ public final class NativeDirectories {
         OperatingSystem os = resolve(operatingSystem);
         if (os == OperatingSystem.ANDROID || os == OperatingSystem.IOS)
             return buildCandidates(namespace, Collections.emptyList(), os);
-        Set<Path> roots = new LinkedHashSet<>();
-        for (Path root : preferredRoots) roots.add(Objects.requireNonNull(root).toAbsolutePath().normalize());
+        Map<Path, Boolean> roots = new LinkedHashMap<>();
+        for (Path root : preferredRoots)
+            roots.putIfAbsent(Objects.requireNonNull(root).toAbsolutePath().normalize(), true);
         Path temp = overridePath("natives.tempDir");
-        if (temp != null) roots.add(temp.normalize());
-        else addAbsolute(roots, System.getProperty("java.io.tmpdir"));
+        if (temp == null) temp = absolutePath(System.getProperty("java.io.tmpdir"));
+        if (temp != null) roots.putIfAbsent(temp.normalize(), true);
         Path userHome = overridePath("natives.userHome");
         if (userHome == null) userHome = absolutePath(System.getProperty("user.home"));
         Path cache = overridePath("natives.cacheDir");
@@ -75,21 +79,18 @@ public final class NativeDirectories {
             else if (os == OperatingSystem.MACOS) cache = userHome.resolve("Library/Caches");
             else cache = absoluteOr(System.getenv("XDG_CACHE_HOME"), userHome.resolve(".cache"));
         }
-        if (cache != null) roots.add(cache.resolve(namespace).toAbsolutePath().normalize());
+        if (cache != null) roots.putIfAbsent(cache.resolve(namespace).normalize(), true);
         if (userHome != null) {
-            roots.add(userHome.resolve(homePrefix).resolve("natives").resolve(namespace).toAbsolutePath()
-                    .normalize());
+            roots.putIfAbsent(userHome.resolve(homePrefix).resolve("natives").resolve(namespace).normalize(),
+                    true);
+        }
+        if (os == OperatingSystem.LINUX) {
+            addRuntimeRoot(roots, absolutePath(System.getenv("XDG_RUNTIME_DIR")), namespace);
+            addRuntimeRoot(roots, Paths.get("/dev/shm"), namespace);
         }
         List<DirectoryCandidate> candidates = new ArrayList<>();
-        for (Path root : roots) candidates.add(new DirectoryCandidate(root, namespace, os));
-        if (os == OperatingSystem.LINUX) {
-            Path runtime = absolutePath(System.getenv("XDG_RUNTIME_DIR"));
-            if (runtime != null && roots.add(runtime.normalize()))
-                candidates.add(new DirectoryCandidate(runtime, namespace, os, false));
-            Path sharedMemory = Paths.get("/dev/shm");
-            if (roots.add(sharedMemory))
-                candidates.add(new DirectoryCandidate(sharedMemory, namespace, os, false));
-        }
+        roots.forEach((root, createParents) -> candidates
+                .add(new DirectoryCandidate(root, namespace, os, createParents)));
         return Collections.unmodifiableList(candidates);
     }
 
@@ -170,9 +171,9 @@ public final class NativeDirectories {
                     "Home prefix must be a simple directory name of 1 to 64 characters");
     }
 
-    private static void addAbsolute(Set<Path> roots, String value) {
-        Path path = absolutePath(value);
-        if (path != null) roots.add(path.normalize());
+    private static void addRuntimeRoot(Map<Path, Boolean> roots, Path base, String namespace) {
+        if (base != null && base.isAbsolute() && Files.isDirectory(base))
+            roots.putIfAbsent(base.resolve(namespace).normalize(), false);
     }
 
     private static Path absolutePath(String value) {
