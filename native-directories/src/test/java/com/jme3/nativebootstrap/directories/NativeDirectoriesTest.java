@@ -292,6 +292,26 @@ class NativeDirectoriesTest {
     }
 
     @Test
+    void onlyTheApplicationDirectoryIsHidden() throws IOException {
+        Path base = Files.createDirectory(root.resolve("visible-base"));
+        OperatingSystem os = OperatingSystems.detect();
+        for (String prefix : Arrays.asList("my-app", ".my-app")) {
+            DirectoryCandidate candidate = NativeDirectories
+                    .candidates(prefix, "bindings", Arrays.asList(base), () -> os).get(0);
+            Path expected = base.resolve(".my-app/bindings");
+            assertEquals(expected, candidate.root());
+            Path fresh = candidate.get();
+            assertEquals(expected.toRealPath(), fresh.getParent());
+            assertTrue(fresh.getFileName().toString().startsWith("bindings-"));
+            for (Path path : Arrays.asList(base, expected.getParent(), expected, fresh)) {
+                boolean hidden = os == OperatingSystem.WINDOWS ? (Boolean) Files.getAttribute(path,
+                        "dos:hidden") : Files.isHidden(path);
+                assertEquals(path.equals(expected.getParent()), hidden, path.toString());
+            }
+        }
+    }
+
+    @Test
     void createsParentsAndFreshPrivateDirectories() throws IOException {
         DirectoryCandidate candidate = NativeDirectories
                 .fromRoots("test", Arrays.asList(root.resolve("missing/parents")), OperatingSystems::detect)

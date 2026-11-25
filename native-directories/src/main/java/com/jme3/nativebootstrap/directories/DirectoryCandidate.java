@@ -3,14 +3,19 @@ package com.jme3.nativebootstrap.directories;
 import com.jme3.nativebootstrap.common.OperatingSystem;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * A lazy extraction destination. Each call creates a distinct directory with best-effort permission
  * hardening.
  */
 public final class DirectoryCandidate implements Supplier<Path> {
+    private static final Logger LOG = Logger.getLogger(DirectoryCandidate.class.getName());
     private final Path base;
     private final Path root;
     private final String prefix;
@@ -36,7 +41,8 @@ public final class DirectoryCandidate implements Supplier<Path> {
         NativeDirectories.validateHomePrefix(homePrefix);
         NativeDirectories.validateNamespace(namespace);
         this.base = base.toAbsolutePath().normalize();
-        this.root = this.base.resolve(homePrefix).resolve(namespace);
+        String hiddenPrefix = homePrefix.startsWith(".") ? homePrefix : "." + homePrefix;
+        this.root = this.base.resolve(hiddenPrefix).resolve(namespace);
         this.prefix = namespace + "-";
         this.operatingSystem = operatingSystem;
         this.createBase = createBase;
@@ -51,7 +57,7 @@ public final class DirectoryCandidate implements Supplier<Path> {
     }
 
     /**
-     * Returns the stable parent of the fresh extraction directories (base/prefix/namespace).
+     * Returns the stable parent of the fresh extraction directories (base/.prefix/namespace).
      *
      * @return the configured absolute root
      * @throws UnsupportedOperationException
@@ -89,6 +95,17 @@ public final class DirectoryCandidate implements Supplier<Path> {
             Path directory = PrivateDirectory.create(base, root, prefix, operatingSystem, createBase,
                     new PermissionCommands());
             directory.toFile().deleteOnExit();
+            if (operatingSystem == OperatingSystem.WINDOWS) {
+                Path applicationDirectory = root.getParent();
+                try {
+                    if (!Files.isSameFile(applicationDirectory, base)) {
+                        Files.setAttribute(applicationDirectory, "dos:hidden", true,
+                                LinkOption.NOFOLLOW_LINKS);
+                    }
+                } catch (IOException | UnsupportedOperationException | SecurityException e) {
+                    LOG.log(Level.FINE, "Cannot set hidden attribute on " + applicationDirectory, e);
+                }
+            }
             return directory;
         } catch (IOException e) {
             throw new UncheckedIOException("Cannot prepare native directory under " + root, e);

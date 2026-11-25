@@ -35,6 +35,8 @@ Path directory = candidates.get(0).get();
 
 Each extraction gets a fresh directory under `<base>/<homePrefix>/<namespace>/`. In the example
 above, a temporary base of `/tmp` gives `/tmp/.my-app/my-library/my-library-<id>/`.
+Only the application directory (`.my-app` above) is hidden. Bootstrap adds a leading dot if the prefix
+lacks one. On Windows it also sets the hidden attribute on that directory when the filesystem permits it.
 The default prefix is `.jme3`. The caller chooses the namespace, typically a library or application name.
 
 Bases are tried in order: preferred paths, JVM temp, platform cache, user home, then on Linux
