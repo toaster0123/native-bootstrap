@@ -129,10 +129,7 @@ class NativeLoaderIntegrationTest {
         Path blocked = Files.write(root.resolve("blocked"), new byte[] { 1 });
         for (String destination : Arrays.asList("temp", "cache", "home")) {
             Path base = Files.createDirectory(root.resolve(destination));
-            Path expected = destination.equals(
-                    "temp") ? base.resolve("temp")
-                            : destination.equals("cache") ? base.resolve("cache/jni-test")
-                                                          : base.resolve("home/.custom/natives/jni-test");
+            Path expected = base.resolve(destination).resolve(".custom/jni-test");
             runProbe(base, destination, new String[] {
                     "-Dnatives.tempDir=" + (destination.equals("temp") ? base.resolve("temp") : blocked),
                     "-Dnatives.cacheDir=" + (destination.equals("home") ? blocked : base.resolve("cache")),
@@ -156,9 +153,9 @@ class NativeLoaderIntegrationTest {
         for (String runtime : Arrays.asList("/runtime", "/runtime/missing")) {
             List<String> command = new java.util.ArrayList<>(sandbox);
             command.addAll(Arrays.asList(runtime, "--chdir", "/", "--"));
-            String expectedRoot = (runtime.equals("/runtime") ? runtime : "/dev/shm") + "/jni-test";
+            String expectedRoot = (runtime.equals("/runtime") ? runtime : "/dev/shm") + "/.jme3/jni-test";
             runProbe(root, "linux-namespace",
-                    new String[] { "-Djava.io.tmpdir=/tmp", "-Dnatives.userHome=" + home,
+                    new String[] { "-Djava.io.tmpdir=" + root.toRealPath(), "-Dnatives.userHome=" + home,
                             "-Dnatives.cacheDir=" + home.resolve("cache"), "-Dnatives.withOsLibraries=false",
                             "-Dprobe.expectedRoot=" + expectedRoot },
                     command);
@@ -249,7 +246,8 @@ class NativeLoaderIntegrationTest {
                 Path loaded = new NativeLoader(path -> System.load(path.toString())).load(
                         NativeDirectories.candidates("jni-test", OperatingSystems::detect),
                         Arrays.asList(resource));
-                Path expected = Paths.get(System.getProperty("natives.tempDir")).toRealPath();
+                Path expected = Paths.get(System.getProperty("natives.tempDir"), ".jme3", "jni-test")
+                        .toRealPath();
                 if (loaded == null || !loaded.getParent().equals(expected)
                         || !Files.isRegularFile(loaded.resolve(resource.fileName())) || loadCount() != 1)
                     throw new AssertionError("README extraction or JNI initialization failed: " + loaded);
@@ -332,8 +330,8 @@ class NativeLoaderIntegrationTest {
                     OperatingSystems::detect);
             Path runtime = Paths.get(System.getenv("XDG_RUNTIME_DIR"));
             boolean runtimeCandidate = candidates.stream()
-                    .anyMatch(c -> c.root().equals(runtime.resolve("jni-test")));
-            if (runtimeCandidate != Files.isDirectory(runtime) || Files.exists(runtime.resolve("jni-test")))
+                    .anyMatch(c -> c.root().equals(runtime.resolve(".jme3/jni-test")));
+            if (runtimeCandidate != Files.isDirectory(runtime) || Files.exists(runtime.resolve(".jme3")))
                 throw new AssertionError("Unexpected runtime candidate or eager creation: " + runtime);
             for (int index = 0; index < 3; index++) {
                 Path ancestor = Paths.get(index == 0 ? "/tmp" : "/host-home");

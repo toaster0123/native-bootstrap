@@ -11,31 +11,47 @@ import java.util.function.Supplier;
  * hardening.
  */
 public final class DirectoryCandidate implements Supplier<Path> {
+    private final Path base;
     private final Path root;
     private final String prefix;
     private final OperatingSystem operatingSystem;
-    private final boolean createParents;
+    private final boolean createBase;
 
-    public DirectoryCandidate(Path root, String namespace, OperatingSystem operatingSystem) {
-        this(root, namespace, operatingSystem, true);
+    /**
+     * Uses a manually specified base with the configured application prefix and library namespace.
+     *
+     * @param base
+     *            base directory to create on demand
+     * @param namespace
+     *            application or library name
+     * @param operatingSystem
+     *            platform used for permission checks
+     */
+    public DirectoryCandidate(Path base, String namespace, OperatingSystem operatingSystem) {
+        this(base, NativeDirectories.defaultHomePrefix(), namespace, operatingSystem, true);
     }
 
-    DirectoryCandidate(Path root, String namespace, OperatingSystem operatingSystem, boolean createParents) {
-        this.root = root.toAbsolutePath().normalize();
+    DirectoryCandidate(Path base, String homePrefix, String namespace, OperatingSystem operatingSystem,
+            boolean createBase) {
+        NativeDirectories.validateHomePrefix(homePrefix);
+        NativeDirectories.validateNamespace(namespace);
+        this.base = base.toAbsolutePath().normalize();
+        this.root = this.base.resolve(homePrefix).resolve(namespace);
         this.prefix = namespace + "-";
         this.operatingSystem = operatingSystem;
-        this.createParents = createParents;
+        this.createBase = createBase;
     }
 
     DirectoryCandidate(OperatingSystem operatingSystem) {
+        this.base = null;
         this.root = null;
         this.prefix = null;
         this.operatingSystem = operatingSystem;
-        this.createParents = false;
+        this.createBase = false;
     }
 
     /**
-     * Returns the destination root without creating or accessing it.
+     * Returns the stable parent of the fresh extraction directories (base/prefix/namespace).
      *
      * @return the configured absolute root
      * @throws UnsupportedOperationException
@@ -56,10 +72,9 @@ public final class DirectoryCandidate implements Supplier<Path> {
     }
 
     /**
-     * Creates a fresh extraction directory, or throws UncheckedIOException. The Linux runtime fallbacks may
-     * create their namespace directory under an existing base. Other candidates can create missing parents.
-     * The natives.noAdditionalChecks system property disables external permission helpers when true; Java
-     * permission checks and directory creation remain active. The returned directory is scheduled for
+     * Creates a fresh extraction directory, or throws UncheckedIOException. Only explicit bases can be
+     * created. The natives.noAdditionalChecks system property disables external permission helpers when true;
+     * Java permission checks and directory creation remain active. The returned directory is scheduled for
      * best-effort deletion at JVM exit; callers must arrange cleanup for any files they add.
      */
     @Override
@@ -71,7 +86,8 @@ public final class DirectoryCandidate implements Supplier<Path> {
             } catch (UnsupportedOperationException e) {
                 throw new IOException("Native extraction requires a file-backed path: " + root, e);
             }
-            Path directory = PrivateDirectory.create(root, prefix, operatingSystem, createParents);
+            Path directory = PrivateDirectory.create(base, root, prefix, operatingSystem, createBase,
+                    new PermissionCommands());
             directory.toFile().deleteOnExit();
             return directory;
         } catch (IOException e) {

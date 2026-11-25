@@ -33,11 +33,14 @@ List<DirectoryCandidate> candidates = NativeDirectories.candidates(".my-app", "m
 Path directory = candidates.get(0).get();
 ```
 
-On Linux, the default candidates include the application namespace under `XDG_RUNTIME_DIR` and `/dev/shm`
-after the usual temporary, cache and home directories. Only existing base directories are considered.
-Native Bootstrap creates the namespace directory when needed and applies the same ownership, permissions
-and executable access checks. These candidates can help when a container exposes the owners of the usual
-directories as unmapped UIDs.
+Each extraction gets a fresh directory under `<base>/<homePrefix>/<namespace>/`. In the example
+above, a temporary base of `/tmp` gives `/tmp/.my-app/my-library/my-library-<id>/`.
+The default prefix is `.jme3`. The caller chooses the namespace, typically a library or application name.
+
+Bases are tried in order: preferred paths, JVM temp, platform cache, user home, then on Linux
+`XDG_RUNTIME_DIR` and `/dev/shm`. Discovered bases must already be directories. A base passed by the
+caller or set with a `natives.*` path override may be created when selected. All destinations use
+the same ownership, permission and executable access checks for the platform.
 
 ## System properties overrides
 
@@ -48,7 +51,7 @@ Can be used to override the default behavior
 | `natives.tempDir` | Temporary directory for native extraction |
 | `natives.userHome` | User home directory for native extraction |
 | `natives.cacheDir` | Cache directory for native extraction  |
-| `natives.namespace` | Namespace for native extraction within the home directory |
+| `natives.namespace` | Default application prefix under every extraction base (default `.jme3`) |
 | `natives.noAdditionalChecks` | Disables external permission helpers |
 | `natives.preferOsLibraries` | Tries `System.loadLibrary` before classpath extraction (default `false`) |
 | `natives.withOsLibraries` | Enables OS library fallback for missing resources, extraction failures and load failures (default `true`); `false` also disables `preferOsLibraries` |

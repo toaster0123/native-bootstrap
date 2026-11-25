@@ -18,6 +18,7 @@ import java.nio.file.attribute.AclEntryFlag;
 import java.nio.file.attribute.AclEntryPermission;
 import java.nio.file.attribute.AclEntryType;
 import java.nio.file.attribute.AclFileAttributeView;
+import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
@@ -45,24 +46,19 @@ final class PrivateDirectory {
     }
 
     static Path create(Path root, String prefix, OperatingSystem os) throws IOException {
-        return create(root, prefix, os, true);
-    }
-
-    static Path create(Path root, String prefix, OperatingSystem os, boolean createParents)
-            throws IOException {
-        return create(root, prefix, os, new PermissionCommands(), createParents);
+        return create(root, prefix, os, new PermissionCommands());
     }
 
     static Path create(Path root, String prefix, OperatingSystem os, PermissionCommands commands)
             throws IOException {
-        return create(root, prefix, os, commands, true);
+        return create(root, root, prefix, os, true, commands);
     }
 
-    private static Path create(Path root, String prefix, OperatingSystem os, PermissionCommands commands,
-            boolean createParents) throws IOException {
+    static Path create(Path base, Path root, String prefix, OperatingSystem os, boolean createBase,
+            PermissionCommands commands) throws IOException {
         if (Boolean.getBoolean("natives.noAdditionalChecks")) commands = null;
-        if (os == OperatingSystem.WINDOWS) return createWindows(root, prefix, commands);
         switch (os) {
+            case WINDOWS:
             case MACOS:
             case LINUX:
             case FREEBSD:
@@ -73,30 +69,9 @@ final class PrivateDirectory {
             default:
                 throw new IOException("Desktop native extraction is unsupported for " + os);
         }
-        Path existing = createParents ? root : root.getParent();
-        if (createParents) {
-            while (existing != null && !Files.exists(existing)) existing = existing.getParent();
-        }
-        if (existing == null) throw new IOException("POSIX permissions are unavailable for " + root);
-        existing = existing.toRealPath();
-        PosixFileAttributeView permissions = Files.getFileAttributeView(existing,
-                PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
-        if (permissions == null) throw new IOException("POSIX permissions are unavailable for " + root);
-        // A provider may return a view even when reading it is unsupported or
-        // denied. Verify the actual attributes before creating any directories.
-        if (!permissions.readAttributes().isDirectory())
-            throw new IOException("Extraction ancestor is not a directory: " + existing);
-        if (createParents) {
-            if (!Files.isDirectory(root))
-                Files.createDirectories(root, PosixFilePermissions.asFileAttribute(PRIVATE));
-        } else {
-            try {
-                Files.createDirectory(root, PosixFilePermissions.asFileAttribute(PRIVATE));
-            } catch (FileAlreadyExistsException e) {
-                if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) throw e;
-            }
-        }
-        root = root.toRealPath();
+        boolean windows = os == OperatingSystem.WINDOWS;
+        root = prepareRoot(base, root, createBase, windows);
+        if (windows) return createWindows(root, prefix, commands);
         Path directory = Files.createTempDirectory(root, prefix,
                 PosixFilePermissions.asFileAttribute(PRIVATE));
         try {
@@ -133,6 +108,38 @@ final class PrivateDirectory {
             }
             throw e;
         }
+    }
+
+    private static Path prepareRoot(Path base, Path root, boolean createBase, boolean windows)
+            throws IOException {
+        FileAttribute<?>[] attributes = windows ? new FileAttribute<?>[0] : new FileAttribute<?>[] {
+                PosixFilePermissions.asFileAttribute(PRIVATE) };
+        if (!windows) {
+            Path existing = base;
+            if (createBase) {
+                while (existing != null && !Files.exists(existing)) existing = existing.getParent();
+            }
+            if (existing == null) throw new IOException("POSIX permissions are unavailable for " + base);
+            PosixFileAttributeView permissions = Files.getFileAttributeView(existing.toRealPath(),
+                    PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+            // Some providers expose the view but cannot read it. Check before creating anything.
+            if (permissions == null || !permissions.readAttributes().isDirectory())
+                throw new IOException("POSIX directory permissions are unavailable for " + existing);
+        }
+        if (createBase && !Files.isDirectory(base)) Files.createDirectories(base, attributes);
+        Path directory = base.toRealPath();
+        if (!base.equals(root)) {
+            // Create one component at a time so a disappearing system base is never recreated.
+            for (Path component : base.relativize(root)) {
+                directory = directory.resolve(component);
+                try {
+                    Files.createDirectory(directory, attributes);
+                } catch (FileAlreadyExistsException e) {
+                    if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) throw e;
+                }
+            }
+        }
+        return directory;
     }
 
     private static void checkParents(Path root, UserPrincipal owner, boolean mac, PermissionCommands commands)
@@ -183,8 +190,6 @@ final class PrivateDirectory {
 
     private static Path createWindows(Path root, String prefix, PermissionCommands commands)
             throws IOException {
-        if (!Files.isDirectory(root)) Files.createDirectories(root);
-        root = root.toRealPath();
         Path directory = root.resolve(prefix + UUID.randomUUID());
         PermissionCommands.Result result = null;
         if (commands != null) {
