@@ -18,9 +18,10 @@ public final class NativeDirectories {
 
     /**
      * Returns preferred roots, JVM temp, user cache and ~/.jme3/natives/namespace, in that order. Default
-     * paths may be overridden with natives.tempDir, natives.userHome and natives.cacheDir. The default .jme3
-     * home prefix may be overridden with natives.namespace. Android and iOS return only a virtual candidate
-     * that carries the platform without referring to a filesystem directory.
+     * paths may be overridden with natives.tempDir, natives.userHome and natives.cacheDir. Linux then tries
+     * existing XDG_RUNTIME_DIR and /dev/shm directories. The default .jme3 home prefix may be overridden with
+     * natives.namespace. Android and iOS return only a virtual candidate that carries the platform without
+     * referring to a filesystem directory.
      *
      * @param namespace
      *            application or library name
@@ -39,8 +40,9 @@ public final class NativeDirectories {
 
     /**
      * Returns preferred roots, JVM temp, user cache and ~/homePrefix/natives/namespace, in that order. Path
-     * system properties apply; the explicit homePrefix takes precedence over natives.namespace. Android and
-     * iOS return only a virtual candidate without a filesystem directory.
+     * system properties apply; the explicit homePrefix takes precedence over natives.namespace. Linux then
+     * tries existing XDG_RUNTIME_DIR and /dev/shm directories. Android and iOS return only a virtual
+     * candidate without a filesystem directory.
      *
      * @param homePrefix
      *            directory name under the user's home, for example ".jme3"
@@ -78,11 +80,22 @@ public final class NativeDirectories {
             roots.add(userHome.resolve(homePrefix).resolve("natives").resolve(namespace).toAbsolutePath()
                     .normalize());
         }
-        return buildCandidates(namespace, new ArrayList<>(roots), os);
+        List<DirectoryCandidate> candidates = new ArrayList<>();
+        for (Path root : roots) candidates.add(new DirectoryCandidate(root, namespace, os));
+        if (os == OperatingSystem.LINUX) {
+            Path runtime = absolutePath(System.getenv("XDG_RUNTIME_DIR"));
+            if (runtime != null && roots.add(runtime.normalize()))
+                candidates.add(new DirectoryCandidate(runtime, namespace, os, false));
+            Path sharedMemory = Paths.get("/dev/shm");
+            if (roots.add(sharedMemory))
+                candidates.add(new DirectoryCandidate(sharedMemory, namespace, os, false));
+        }
+        return Collections.unmodifiableList(candidates);
     }
 
     /**
-     * Returns the default ordered candidates with ~/.jme3/natives/namespace as the home fallback.
+     * Returns the default ordered candidates with ~/.jme3/natives/namespace as the home fallback, followed on
+     * Linux by the runtime fallbacks.
      *
      * @param namespace
      *            application or library name

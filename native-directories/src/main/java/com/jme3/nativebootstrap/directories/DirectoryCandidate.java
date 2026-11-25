@@ -14,17 +14,24 @@ public final class DirectoryCandidate implements Supplier<Path> {
     private final Path root;
     private final String prefix;
     private final OperatingSystem operatingSystem;
+    private final boolean createRoot;
 
     public DirectoryCandidate(Path root, String namespace, OperatingSystem operatingSystem) {
+        this(root, namespace, operatingSystem, true);
+    }
+
+    DirectoryCandidate(Path root, String namespace, OperatingSystem operatingSystem, boolean createRoot) {
         this.root = root.toAbsolutePath().normalize();
         this.prefix = namespace + "-";
         this.operatingSystem = operatingSystem;
+        this.createRoot = createRoot;
     }
 
     DirectoryCandidate(OperatingSystem operatingSystem) {
         this.root = null;
         this.prefix = null;
         this.operatingSystem = operatingSystem;
+        this.createRoot = false;
     }
 
     /**
@@ -49,10 +56,11 @@ public final class DirectoryCandidate implements Supplier<Path> {
     }
 
     /**
-     * Creates missing parents and a fresh extraction directory, or throws UncheckedIOException. The
-     * natives.noAdditionalChecks system property disables external permission helpers when true; Java
-     * permission checks and directory creation remain active. The returned directory is scheduled for
-     * best-effort deletion at JVM exit; callers must arrange cleanup for any files they add.
+     * Creates a fresh extraction directory, or throws UncheckedIOException. The Linux runtime fallbacks
+     * require existing roots. Other candidates can create missing parents. The natives.noAdditionalChecks
+     * system property disables external permission helpers when true; Java permission checks and directory
+     * creation remain active. The returned directory is scheduled for best-effort deletion at JVM exit;
+     * callers must arrange cleanup for any files they add.
      */
     @Override
     public Path get() {
@@ -63,7 +71,7 @@ public final class DirectoryCandidate implements Supplier<Path> {
             } catch (UnsupportedOperationException e) {
                 throw new IOException("Native extraction requires a file-backed path: " + root, e);
             }
-            Path directory = PrivateDirectory.create(root, prefix, operatingSystem);
+            Path directory = PrivateDirectory.create(root, prefix, operatingSystem, createRoot);
             directory.toFile().deleteOnExit();
             return directory;
         } catch (IOException e) {

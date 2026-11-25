@@ -218,7 +218,7 @@ class NativeDirectoriesTest {
                     Arrays.asList(preferred, temp, preferred), OperatingSystems::detect);
             assertEquals(preferred, withPreferred.get(0).root());
             assertEquals(temp, withPreferred.get(1).root());
-            DirectoryCandidate fallback = withPreferred.get(withPreferred.size() - 1);
+            DirectoryCandidate fallback = withPreferred.get(3);
             assertEquals(home.resolve(".my-app/natives/test"), fallback.root());
             assertFalse(Files.exists(home));
             assertFalse(Files.exists(temp));

@@ -44,11 +44,20 @@ final class PrivateDirectory {
     }
 
     static Path create(Path root, String prefix, OperatingSystem os) throws IOException {
-        return create(root, prefix, os, new PermissionCommands());
+        return create(root, prefix, os, true);
+    }
+
+    static Path create(Path root, String prefix, OperatingSystem os, boolean createRoot) throws IOException {
+        return create(root, prefix, os, new PermissionCommands(), createRoot);
     }
 
     static Path create(Path root, String prefix, OperatingSystem os, PermissionCommands commands)
             throws IOException {
+        return create(root, prefix, os, commands, true);
+    }
+
+    private static Path create(Path root, String prefix, OperatingSystem os, PermissionCommands commands,
+            boolean createRoot) throws IOException {
         if (Boolean.getBoolean("natives.noAdditionalChecks")) commands = null;
         if (os == OperatingSystem.WINDOWS) return createWindows(root, prefix, commands);
         switch (os) {
@@ -63,7 +72,9 @@ final class PrivateDirectory {
                 throw new IOException("Desktop native extraction is unsupported for " + os);
         }
         Path existing = root;
-        while (existing != null && !Files.exists(existing)) existing = existing.getParent();
+        if (createRoot) {
+            while (existing != null && !Files.exists(existing)) existing = existing.getParent();
+        }
         if (existing == null) throw new IOException("POSIX permissions are unavailable for " + root);
         existing = existing.toRealPath();
         PosixFileAttributeView permissions = Files.getFileAttributeView(existing,
@@ -73,7 +84,7 @@ final class PrivateDirectory {
         // denied. Verify the actual attributes before creating any directories.
         if (!permissions.readAttributes().isDirectory())
             throw new IOException("Extraction ancestor is not a directory: " + existing);
-        if (!Files.isDirectory(root))
+        if (createRoot && !Files.isDirectory(root))
             Files.createDirectories(root, PosixFilePermissions.asFileAttribute(PRIVATE));
         root = root.toRealPath();
         Path directory = Files.createTempDirectory(root, prefix,
