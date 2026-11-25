@@ -125,6 +125,7 @@ class NativeDirectoriesTest {
 
     @Test
     void mobileCandidatesDoNotResolveExtractionPathProperties() {
+        System.setProperty("natives.namespace", "invalid/prefix");
         for (String property : Arrays.asList("natives.tempDir", "natives.userHome", "natives.cacheDir"))
             System.setProperty(property, "relative-path");
         for (OperatingSystem os : Arrays.asList(OperatingSystem.ANDROID, OperatingSystem.IOS)) {
@@ -133,6 +134,8 @@ class NativeDirectoriesTest {
             assertEquals(1, candidates.size());
             assertEquals(os, candidates.get(0).operatingSystem());
             assertThrows(UnsupportedOperationException.class, candidates.get(0)::root);
+            assertThrows(UnsupportedOperationException.class,
+                    NativeDirectories.fromRoots("test", Arrays.asList(root), () -> os).get(0)::root);
         }
     }
 
@@ -485,7 +488,15 @@ class NativeDirectoriesTest {
 
     public static class NoStoreProbe {
         public static void main(String[] args) throws Exception {
+            Path base = Paths.get(args[0]);
+            String deniedTemp = base.resolve("denied-temp").toString();
+            System.setProperty("java.io.tmpdir", deniedTemp);
             System.setSecurityManager(new SecurityManager() {
+                @Override
+                public void checkRead(String file) {
+                    if (deniedTemp.equals(file)) throw new SecurityException("Temp directory unavailable");
+                }
+
                 @Override
                 public void checkPermission(java.security.Permission permission) {
                     if (permission.getName().equals("getFileStoreAttributes"))
@@ -493,8 +504,7 @@ class NativeDirectoriesTest {
                 }
             });
             Path directory = NativeDirectories
-                    .fromRoots("no-filestore", Arrays.asList(Paths.get(args[0])), OperatingSystems::detect)
-                    .get(0).get();
+                    .candidates("no-filestore", Arrays.asList(base), OperatingSystems::detect).get(0).get();
             Files.delete(directory);
         }
     }

@@ -32,7 +32,7 @@ public final class NativeDirectories {
      */
     public static List<DirectoryCandidate> candidates(String namespace, List<Path> preferredRoots,
             Supplier<OperatingSystem> operatingSystem) {
-        return candidates(defaultHomePrefix(), namespace, preferredRoots, operatingSystem);
+        return candidates(null, namespace, preferredRoots, operatingSystem, true);
     }
 
     /**
@@ -52,6 +52,7 @@ public final class NativeDirectories {
      */
     public static List<DirectoryCandidate> candidates(String homePrefix, String namespace,
             List<Path> preferredRoots, Supplier<OperatingSystem> operatingSystem) {
+        validateHomePrefix(homePrefix);
         return candidates(homePrefix, namespace, preferredRoots, operatingSystem, true);
     }
 
@@ -99,17 +100,20 @@ public final class NativeDirectories {
      */
     public static List<DirectoryCandidate> fromRoots(String namespace, List<Path> roots,
             Supplier<OperatingSystem> operatingSystem) {
-        return candidates(defaultHomePrefix(), namespace, roots, operatingSystem, false);
+        return candidates(null, namespace, roots, operatingSystem, false);
     }
 
     private static List<DirectoryCandidate> candidates(String homePrefix, String namespace,
             List<Path> preferredRoots, Supplier<OperatingSystem> operatingSystem, boolean includeDefaults) {
-        validateHomePrefix(homePrefix);
         validateNamespace(namespace);
         Objects.requireNonNull(operatingSystem, "operatingSystem");
         OperatingSystem os = Objects.requireNonNull(operatingSystem.get(), "OS supplier returned null");
         if (os == OperatingSystem.ANDROID || os == OperatingSystem.IOS)
             return Collections.singletonList(new DirectoryCandidate(os));
+        if (homePrefix == null) {
+            homePrefix = defaultHomePrefix();
+            validateHomePrefix(homePrefix);
+        }
 
         Roots roots = new Roots();
         for (Path base : preferredRoots) {
@@ -183,8 +187,12 @@ public final class NativeDirectories {
         void use(Path base) {
             if (base == null || !base.isAbsolute()) return;
             Path normalized = base.normalize();
-            if (Files.isDirectory(normalized)) {
-                bases.putIfAbsent(normalized, false);
+            try {
+                if (Files.isDirectory(normalized)) {
+                    bases.putIfAbsent(normalized, false);
+                }
+            } catch (SecurityException denied) {
+                // An inaccessible system base must not prevent trying the other candidates.
             }
         }
     }
