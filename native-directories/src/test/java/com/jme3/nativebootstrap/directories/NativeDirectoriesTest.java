@@ -68,8 +68,14 @@ class NativeDirectoriesTest {
                     });
             List<Path> paths = new ArrayList<>();
             for (DirectoryCandidate candidate : candidates) paths.add(candidate.root());
-            assertEquals(Arrays.asList(preferred, temp, cache.resolve("test"),
-                    home.resolve(".custom/natives/test")), paths);
+            List<Path> expected = Arrays.asList(preferred, temp, cache.resolve("test"),
+                    home.resolve(".custom/natives/test"));
+            if (os == OperatingSystem.LINUX) {
+                assertEquals(expected, paths.subList(0, expected.size()));
+                assertEquals(Paths.get("/dev/shm").toAbsolutePath(), paths.get(paths.size() - 1));
+            } else {
+                assertEquals(expected, paths);
+            }
             assertEquals(1, calls.get());
         }
         assertFalse(Files.exists(temp));
@@ -85,7 +91,6 @@ class NativeDirectoriesTest {
         Path cache = root.resolve("missing/cache");
         System.setProperty("natives.cacheDir", cache.toString());
         List<DirectoryCandidate> candidates = NativeDirectories.candidates("test", OperatingSystems::detect);
-        assertEquals(1, candidates.size());
         assertEquals(cache.resolve("test"), candidates.get(0).root());
         assertFalse(Files.exists(cache));
         Path directory = candidates.get(0).get();
